@@ -1,0 +1,36 @@
+name: Validate pre-push hook
+on:
+  push:
+    branches: [ci/pre-push-validation]
+permissions:
+  contents: read
+jobs:
+  hook-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 899100ae0d0dc22fa2749936fac3de715fe13666
+          fetch-depth: 2
+          persist-credentials: false
+          path: source
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check syntax and run hook integration tests
+        working-directory: source
+        run: |
+          bash -n scripts/pre-push scripts/check-tag-version.sh scripts/test-pre-push.sh
+          git diff --check
+          bash scripts/test-pre-push.sh
+      - name: Confirm the regression fails with the original hook
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git show b18fc0fecebabf821772fe618e3fa765c6efe445:scripts/pre-push > scripts/pre-push
+          if bash scripts/test-pre-push.sh > "$RUNNER_TEMP/original-hook.log" 2>&1; then
+            echo 'Original hook unexpectedly passed'
+            exit 1
+          fi
+          grep -F '.git/hooks/check-tag-version.sh' "$RUNNER_TEMP/original-hook.log"
+          grep -F 'No such file or directory' "$RUNNER_TEMP/original-hook.log"
+          echo 'PASS: original hook fails at the documented symlink installation'
